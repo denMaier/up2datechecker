@@ -4,6 +4,10 @@
 
 A small dashboard that shows which of your servers need attention: pending updates, security updates, a pending reboot, failed services, or a server that stopped reporting. That's all it does.
 
+![Dashboard showing server status and available updates](assets/screenshots/dashboard.png)
+
+![Host details showing failed services and a pending update](assets/screenshots/host.png)
+
 - **One page.** Every host with its status, most urgent first: *needs attention* (security updates, reboot required, failed services, no report for a day, agent error), *updates available*, *up to date*. Each host has a page listing its pending packages, security updates first.
 - **Push, not pull.** A small agent on each server reports to the dashboard every 6 hours and right after you install or upgrade packages. The dashboard holds no SSH keys or other credentials for your servers and never connects to them.
 - **Failed systemd services**, of the system and of every account with lingering enabled, which is where rootless Quadlets run. A crashed Quadlet container shows up as its failed unit. With `HealthOnFailure=kill` in a Quadlet, a failing health check does too.
