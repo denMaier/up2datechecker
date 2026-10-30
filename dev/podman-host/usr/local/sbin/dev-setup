@@ -1,0 +1,42 @@
+#!/bin/sh
+# One-time setup of the dev Podman host, then a first report
+set -eux
+
+# Rootful Quadlet and a plain service, both failing
+podman pull -q docker.io/library/alpine:3.20
+systemctl daemon-reload
+systemctl start cache.service
+systemctl start nightly-backup.service || true
+
+# Rootless Quadlets of a lingering account, like a Quadstack install
+id quadlets >/dev/null 2>&1 || useradd -m -s /bin/bash quadlets
+uid=$(id -u quadlets)
+dir=/home/quadlets/.config/containers/systemd
+runuser -u quadlets -- mkdir -p "$dir"
+cat >"$dir/db.container" <<Q
+[Container]
+ContainerName=db
+Image=docker.io/library/alpine:3.20
+Exec=sleep infinity
+Network=none
+Q
+cat >"$dir/worker.container" <<Q
+# Crashes: a failed user service
+[Container]
+ContainerName=worker
+Image=docker.io/library/alpine:3.20
+Exec=sh -c 'echo "cannot connect to db" >&2; exit 3'
+Network=none
+Q
+chown -R quadlets: /home/quadlets/.config
+loginctl enable-linger quadlets
+while [ ! -S /run/user/$uid/bus ]; do sleep 1; done
+as_q() { runuser -u quadlets -- env XDG_RUNTIME_DIR=/run/user/$uid DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus "$@"; }
+as_q podman pull -q docker.io/library/alpine:3.20
+as_q systemctl --user daemon-reload
+as_q systemctl --user start db.service
+as_q systemctl --user start worker.service || true
+
+touch /var/lib/dev-setup-done
+sleep 30 # let cache's health check fail
+systemctl start up2date-agent.service

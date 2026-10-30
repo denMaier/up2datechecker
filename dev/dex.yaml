@@ -1,0 +1,23 @@
+# A throwaway OIDC provider for the test environment. Sign in as admin@example.com / password.
+issuer: http://127.0.0.1:5556/dex
+storage:
+  type: memory
+web:
+  http: 0.0.0.0:5556
+oauth2:
+  skipApprovalScreen: true
+staticClients:
+  - id: up2date
+    secret: dev-secret
+    name: Up2Date
+    redirectURIs: [http://127.0.0.1:8484/auth/callback]
+enablePasswordDB: true
+staticPasswords:
+  - email: admin@example.com
+    hash: "$2a$10$rfIX8M3sKrwY/B00RndBauVU/xNbeDDxPhEz6F9RYZ5vNbZSPA5hK"
+    username: admin
+    userID: 08a8684b-db88-4b73-90a9-3cd1661f5466
+  - email: intruder@example.com
+    hash: "$2a$10$rfIX8M3sKrwY/B00RndBauVU/xNbeDDxPhEz6F9RYZ5vNbZSPA5hK"
+    username: intruder
+    userID: 5a1f4a3e-27c8-4d4c-9a39-0d3b8b4c7c11

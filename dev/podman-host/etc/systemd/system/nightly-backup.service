@@ -1,0 +1,7 @@
+# Fails on purpose: a failed system service
+[Unit]
+Description=Nightly backup to the NAS
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'echo "nas.lan: no route to host" >&2; exit 1'

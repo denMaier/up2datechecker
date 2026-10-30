@@ -1,0 +1,80 @@
+# A test environment: make dev, then open http://127.0.0.1:8484 and sign in as
+# admin@example.com / password. intruder@example.com (same password) is not allowed in.
+#
+# Everything shares dex's network namespace, so the browser and the dashboard reach Dex at the
+# same http://127.0.0.1:5556, and the agents may use plain http to 127.0.0.1.
+name: up2date-dev
+
+x-agent: &agent
+  network_mode: service:dex
+  restart: unless-stopped
+  # Report now, then every 15 minutes from the cached package lists
+  command: [sh, -c, "up2date agent; while sleep 900; do up2date agent -no-refresh; done"]
+
+services:
+  dex:
+    image: ghcr.io/dexidp/dex:latest
+    command: [dex, serve, /etc/dex/config.yaml]
+    volumes: [./dex.yaml:/etc/dex/config.yaml:ro]
+    ports: ["127.0.0.1:5556:5556", "127.0.0.1:8484:8484"]
+
+  up2date:
+    build: { context: .., dockerfile: dev/Dockerfile }
+    network_mode: service:dex
+    restart: unless-stopped
+    environment:
+      UP2DATE_LISTEN: 0.0.0.0:8484
+      UP2DATE_PUBLIC_URL: http://127.0.0.1:8484
+      UP2DATE_OIDC_ISSUER: http://127.0.0.1:5556/dex
+      UP2DATE_OIDC_CLIENT_ID: up2date
+      UP2DATE_OIDC_CLIENT_SECRET: dev-secret
+      UP2DATE_ALLOWED_USERS: admin@example.com
+      UP2DATE_STATE_DIR: /var/lib/up2date
+    volumes:
+      - state:/var/lib/up2date
+      - ./hosts.seed.json:/seed/hosts.json:ro
+    # The seeded hosts have fixed tokens (u2d_dev_<name>); new ones you add get real tokens
+    command: [sh, -c, "[ -f /var/lib/up2date/hosts.json ] || cp /seed/hosts.json /var/lib/up2date/; exec up2date serve"]
+
+  # Older images, so there is something to update
+  debian12:
+    <<: *agent
+    build: { context: .., dockerfile: dev/Dockerfile, args: { BASE: "debian:12" } }
+    environment: { UP2DATE_URL: "http://127.0.0.1:8484", UP2DATE_TOKEN: u2d_dev_debian12 }
+    # Pretend a kernel update is waiting for a reboot
+    command: [sh, -c, "touch /run/reboot-required; up2date agent; while sleep 900; do up2date agent -no-refresh; done"]
+  debian13:
+    <<: *agent
+    build: { context: .., dockerfile: dev/Dockerfile, args: { BASE: "debian:13" } }
+    environment: { UP2DATE_URL: "http://127.0.0.1:8484", UP2DATE_TOKEN: u2d_dev_debian13 }
+  ubuntu-noble:
+    <<: *agent
+    build: { context: .., dockerfile: dev/Dockerfile, args: { BASE: "ubuntu:noble-20240423" } }
+    environment: { UP2DATE_URL: "http://127.0.0.1:8484", UP2DATE_TOKEN: u2d_dev_ubuntu }
+  rocky9:
+    <<: *agent
+    build: { context: .., dockerfile: dev/Dockerfile, args: { BASE: "rockylinux:9.3" } }
+    environment: { UP2DATE_URL: "http://127.0.0.1:8484", UP2DATE_TOKEN: u2d_dev_rocky }
+  alpine:
+    <<: *agent
+    build: { context: .., dockerfile: dev/Dockerfile, args: { BASE: "alpine:3.20.0" } }
+    environment: { UP2DATE_URL: "http://127.0.0.1:8484", UP2DATE_TOKEN: u2d_dev_alpine }
+
+  # systemd with failing services and Quadlets, rootful and rootless (a lingering account);
+  # the agent runs from its real, sandboxed units.
+  # Container storage sits on volumes, as overlay on overlay does not work.
+  podman-host:
+    build: { context: .., dockerfile: dev/Dockerfile, target: podman-host }
+    network_mode: service:dex
+    privileged: true
+    cgroup: host
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - podman-root:/var/lib/containers
+      - podman-home:/home
+    tmpfs: [/run, /run/lock, /tmp]
+
+volumes:
+  state:
+  podman-root:
+  podman-home:

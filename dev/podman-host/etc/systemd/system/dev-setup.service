@@ -1,0 +1,13 @@
+[Unit]
+Description=Set up the dev Podman host once
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=!/var/lib/dev-setup-done
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/dev-setup
+TimeoutStartSec=15min
+
+[Install]
+WantedBy=multi-user.target
