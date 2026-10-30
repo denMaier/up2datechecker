@@ -1,0 +1,14 @@
+{{define "title"}}{{.Name}} · {{end}}
+{{define "main"}}
+<p><a href="/hosts/{{.Name}}">← {{.Name}}</a></p>
+<h1>{{if .New}}{{.Name}} added{{else}}New token for {{.Name}}{{end}}</h1>
+<p>This is the agent's token. It is shown only now; Up2Date keeps just a hash of it.</p>
+<input class="token" readonly value="{{.Token}}" aria-label="Agent token">
+
+<h2>Install the agent</h2>
+<p>As root on <b>{{.Name}}</b>; the installer asks for the token:</p>
+<pre>curl -fsSL https://raw.githubusercontent.com/denMaier/up2datechecker/main/deploy/install.sh | bash -s -- agent {{.URL}}</pre>
+<p class="muted">To switch an existing agent to this token, put it in <code>/etc/up2date/agent.env</code> as <code>UP2DATE_TOKEN=…</code>,
+then run <code>systemctl start up2date-agent</code>.</p>
+<p><a href="/hosts/{{.Name}}">Done</a></p>
+{{end}}

@@ -1,0 +1,13 @@
+# Rootful; its health check always fails, and HealthOnFailure=kill turns that into a failed unit
+[Container]
+ContainerName=cache
+Image=docker.io/library/alpine:3.20
+Exec=sleep infinity
+Network=none
+HealthCmd=/bin/false
+HealthInterval=10s
+HealthRetries=1
+HealthOnFailure=kill
+
+[Install]
+WantedBy=multi-user.target

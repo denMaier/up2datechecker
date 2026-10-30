@@ -1,0 +1,14 @@
+[
+  {"name": "debian12", "tokenHash": "17e1d05b4e185dc343ff80b4117ec396bd9a4b1e634858adb9ed5477f7f529dd", "created": "2026-10-01T08:00:00Z"},
+  {"name": "debian13", "tokenHash": "f4fb348e240abc272ab05dae92da8ea2c3a03bcc358456ae87b674aa4eee2cbd", "created": "2026-10-01T08:00:00Z"},
+  {"name": "ubuntu-noble", "tokenHash": "84af85ccbc56b65f1128ad36ed6f7677b078cea344fe3f406f48f371b3a9beea", "created": "2026-10-01T08:00:00Z"},
+  {"name": "rocky9", "tokenHash": "59734a017de3f1466b24cec05544cb0b88d29699c01c84ccc4a936a8628a2dbb", "created": "2026-10-01T08:00:00Z"},
+  {"name": "alpine", "tokenHash": "f1de8f730deeb3d9cfd88368dded5779b8466da6cf82a3a6bef53a3d8997e0f9", "created": "2026-10-01T08:00:00Z"},
+  {"name": "old-nas", "tokenHash": "26fb598f1099f3ee35677c1b40418a618e6812b9e5e45260ac33ca8fed176f18", "created": "2026-09-01T08:00:00Z",
+   "received": "2026-10-12T03:14:00Z",
+   "report": {"agent": "v0.1.0", "hostname": "old-nas", "os": "Debian GNU/Linux 12 (bookworm)", "kernel": "6.1.0-25-amd64", "manager": "apt",
+     "updates": [{"name": "openssh-server", "current": "1:9.2p1-2+deb12u3", "available": "1:9.2p1-2+deb12u4"}],
+     "rebootRequired": false, "bootTime": "2026-08-30T10:00:00Z"}},
+  {"name": "podman-host", "tokenHash": "3caad224783d759bdb9c321f25608b7e04ede1bee9b78dbfb500be5a5f076438", "created": "2026-10-01T08:00:00Z"},
+  {"name": "new-box", "tokenHash": "70cfa6e1e627066098642085ff3fa6a6c562d1f392c1240714893b28fbb34d76", "created": "2026-10-30T08:00:00Z"}
+]

@@ -1,0 +1,23 @@
+{{define "title"}}Settings · {{end}}
+{{define "main"}}
+<p><a href="/">← All hosts</a></p>
+<h1>Settings</h1>
+{{with .Error}}<p class="error">{{.}}</p>{{end}}
+
+<h2>Failed units ignored on every host</h2>
+<p class="muted">One pattern per line, matched against the unit name: <code>*</code> stands for any characters, <code>?</code> for one,
+<code>[…]</code> for a set. For example <code>systemd-modules-load.service</code>, which fails in many containers, or <code>*-dev.service</code>.
+To ignore a unit on one host only, use <b>Always ignore</b> on that host's page.</p>
+<form method="post" action="/settings" class="settings">
+  <textarea name="ignoreUnits" rows="8" spellcheck="false" placeholder="systemd-modules-load.service">{{.Patterns}}</textarea>
+  <button>Save</button>
+</form>
+
+{{if .Matches}}
+<h3>Ignored right now</h3>
+<dl class="facts">
+  {{range $pat, $units := .Matches}}<dt><code>{{$pat}}</code></dt><dd>{{range $i, $u := $units}}{{if $i}}, {{end}}{{$u}}{{end}}</dd>
+  {{end}}
+</dl>
+{{end}}
+{{end}}

@@ -1,0 +1,12 @@
+# /etc/systemd/system/up2date-agent.timer
+[Unit]
+Description=Report pending updates to Up2Date every 6 hours
+
+[Timer]
+OnBootSec=5min
+OnCalendar=00/6:00
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

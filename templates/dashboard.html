@@ -1,0 +1,39 @@
+{{define "head"}}<meta http-equiv="refresh" content="300">{{end}}
+{{define "main"}}
+{{with .Error}}<p class="error">{{.}}</p>{{end}}
+<div class="stats">
+  <div class="stat attention"><b>{{or .Counts.attention 0}}</b> need attention</div>
+  <div class="stat updates"><b>{{or .Counts.updates 0}}</b> with updates</div>
+  <div class="stat ok"><b>{{or .Counts.ok 0}}</b> up to date</div>
+  {{with .Counts.never}}<div class="stat never"><b>{{.}}</b> without a report</div>{{end}}
+</div>
+
+{{if .Hosts}}
+<table>
+  <thead><tr><th>Host</th><th>Status</th><th class="num">Updates</th><th class="num">Security</th><th>System</th><th>Last report</th></tr></thead>
+  <tbody>
+  {{range .Hosts}}{{$h := .}}
+  <tr>
+    <td><a href="/hosts/{{.Name}}"><b>{{.Name}}</b></a></td>
+    <td><span class="badge {{.Status}}">{{.Status.Label}}</span>{{with .Reasons}}<div class="reasons">{{range $i, $r := .}}{{if $i}} · {{end}}{{$r}}{{end}}</div>{{end}}</td>
+    {{with .Report}}
+    <td class="num">{{len .Updates}}</td>
+    <td class="num">{{if $h.Security}}<b class="bad">{{$h.Security}}</b>{{else}}0{{end}}</td>
+    <td class="muted">{{.OS}}</td>
+    {{else}}
+    <td class="num muted">–</td><td class="num muted">–</td><td class="muted">–</td>
+    {{end}}
+    <td class="muted">{{ago .Received}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}
+<p class="muted">No hosts yet. Add one below, then install the agent on it.</p>
+{{end}}
+
+<form class="add" method="post" action="/hosts">
+  <input name="name" required pattern="[A-Za-z0-9][A-Za-z0-9._\-]{0,62}" placeholder="host name, e.g. pve1" autocomplete="off">
+  <button>Add host</button>
+</form>
+{{end}}

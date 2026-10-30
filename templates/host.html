@@ -1,0 +1,90 @@
+{{define "title"}}{{.H.Name}} · {{end}}
+{{define "main"}}
+{{$h := .H}}
+<p><a href="/">← All hosts</a></p>
+<h1>{{$h.Name}} <span class="badge {{$h.Status}}">{{$h.Status.Label}}</span></h1>
+{{with $h.Reasons}}<ul class="reasons">{{range .}}<li>{{.}}</li>{{end}}</ul>{{end}}
+
+{{with $h.Report}}
+<dl class="facts">
+  <dt>System</dt><dd>{{.OS}}</dd>
+  <dt>Kernel</dt><dd>{{.Kernel}}</dd>
+  <dt>Packages</dt><dd>{{.Manager}}</dd>
+  {{if not .BootTime.IsZero}}<dt>Booted</dt><dd>{{date .BootTime}}</dd>{{end}}
+  <dt>Reboot required</dt><dd>{{if .RebootRequired}}<b class="bad">yes</b>{{else}}no{{end}}</dd>
+  <dt>Last report</dt><dd>{{date $h.Received}} ({{ago $h.Received}})</dd>
+  <dt>Agent</dt><dd>{{.Agent}}{{if ne .Hostname $h.Name}} on {{.Hostname}}{{end}}</dd>
+</dl>
+{{with .Error}}<p class="error">The agent reported: <code>{{.}}</code></p>{{end}}
+
+{{with $.Units}}
+<h2 id="services">{{len .}} failed service{{if ne (len .) 1}}s{{end}}{{if ne $h.Failed (len .)}}, {{$h.Failed}} that count{{end}}</h2>
+<table>
+  <thead><tr><th>Unit</th><th>Account</th><th>Description</th><th></th></tr></thead>
+  <tbody>
+  {{range .}}
+  <tr{{if .Quiet}} class="quiet"{{end}}>
+    <td class="mono">{{.Unit}}</td>
+    <td class="muted">{{or .User "system"}}</td>
+    <td>{{.Description}}</td>
+    <td class="actions">
+    {{if eq .Quiet "pattern"}}
+      <span class="muted">ignored everywhere by <code>{{.Pattern}}</code> (<a href="/settings">settings</a>)</span>
+    {{else if eq .Quiet "ignored"}}
+      <span class="muted">ignored on this host</span> {{template "unitAction" (unitAction $h.Name .Key "unignore" "Undo")}}
+    {{else if eq .Quiet "acknowledged"}}
+      <span class="muted">acknowledged until it recovers</span> {{template "unitAction" (unitAction $h.Name .Key "unack" "Undo")}}
+    {{else}}
+      {{template "unitAction" (unitAction $h.Name .Key "ack" "Acknowledge")}}
+      {{template "unitAction" (unitAction $h.Name .Key "ignore" "Always ignore")}}
+    {{end}}
+    </td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+<p class="muted"><b>Acknowledge</b> quiets this failure until a report shows the unit recovered; failing again counts again.
+<b>Always ignore</b> quiets the unit on this host for good. See why it failed with <code>journalctl -u &lt;unit&gt;</code>.</p>
+{{end}}
+
+<h2>{{len .Updates}} pending update{{if ne (len .Updates) 1}}s{{end}}{{with $h.Security}}, {{.}} security{{end}}</h2>
+{{if $.Updates}}
+<table>
+  <thead><tr><th>Package</th><th>Installed</th><th>Available</th><th></th></tr></thead>
+  <tbody>
+  {{range $.Updates}}
+  <tr><td class="mono">{{.Name}}</td><td class="mono muted">{{.Current}}</td><td class="mono">{{.Available}}</td><td>{{if .Security}}<span class="badge attention">security</span>{{end}}</td></tr>
+  {{end}}
+  </tbody>
+</table>
+{{else}}
+<p class="muted">Nothing to install.</p>
+{{end}}
+{{else}}
+<p class="muted">This host has not reported yet. Install the agent with the token you were shown when you added it, or create a new token below.</p>
+{{end}}
+
+{{with $h.IgnoredUnits}}
+<h2>Always ignored on this host</h2>
+<ul class="ignored">
+  {{range .}}<li><code>{{.}}</code> {{template "unitAction" (unitAction $h.Name . "unignore" "Stop ignoring")}}</li>
+  {{end}}
+</ul>
+<p class="muted">System units start with <code>/</code>, user units with their account.</p>
+{{end}}
+
+<h2>Manage</h2>
+<div class="manage">
+  <form method="post" action="/hosts/{{$h.Name}}/token">
+    <p class="muted">A new token replaces the current one at once; the agent needs the new one to keep reporting.</p>
+    <button>New agent token</button>
+  </form>
+  <form method="post" action="/hosts/{{$h.Name}}/delete">
+    <p class="muted">Removes the host and its token. Type <code>{{$h.Name}}</code> to confirm.</p>
+    <input name="confirm" required autocomplete="off" placeholder="{{$h.Name}}">
+    <button class="danger">Remove host</button>
+  </form>
+</div>
+{{end}}
+
+{{define "unitAction"}}<form class="inline" method="post" action="/hosts/{{.Host}}/units"><input type="hidden" name="unit" value="{{.Key}}"><button name="action" value="{{.Action}}">{{.Label}}</button></form>{{end}}

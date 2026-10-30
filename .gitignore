@@ -1,0 +1,4 @@
+/up2date
+/dist
+*.env
+!deploy/*.env.example
