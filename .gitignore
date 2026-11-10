@@ -2,3 +2,4 @@
 /dist
 *.env
 !deploy/*.env.example
+/up2datechecker
