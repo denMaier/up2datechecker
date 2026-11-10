@@ -20,6 +20,8 @@ const usage = `usage:
   up2date agent [flags]    report this machine's updates to the dashboard
       -dry-run             print the report instead of sending it
       -no-refresh          do not refresh the package lists first
+  up2date update [flags]   install the newest release over this binary
+      -same-major          stay on the current major version (or UP2DATE_UPDATE=same-major)
   up2date version
 `
 
@@ -34,6 +36,8 @@ func main() {
 		err = serve()
 	case "agent":
 		err = runAgent(os.Args[2:])
+	case "update":
+		err = runUpdate(os.Args[2:])
 	case "version", "-version", "--version":
 		fmt.Println(version)
 	default:

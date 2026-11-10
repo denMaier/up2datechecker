@@ -18,6 +18,7 @@ URL = os.environ.get('UP2DATE_URL', '').rstrip('/')
 SECRET = os.environ.get('UP2DATE_ENROLLMENT_SECRET', '')
 INCLUDE = set(os.environ.get('UP2DATE_INCLUDE', '').replace(',', ' ').split())
 EXCLUDE = set(os.environ.get('UP2DATE_EXCLUDE', '').replace(',', ' ').split())
+UPDATE = os.environ.get('UP2DATE_UPDATE', '').strip() or 'off'
 STATE = pathlib.Path('/var/lib/up2date-discovery')
 INSTALLER = 'https://raw.githubusercontent.com/denMaier/up2datechecker/main/deploy/install.sh'
 LOG = logging.getLogger('up2date-discover')
@@ -102,7 +103,8 @@ def process(kind, item):
     name = f'pve-{kind}-{vmid}'
     enroll(name, token)
     # Token is passed through stdin, not command arguments or journal output.
-    script = ("set -eu\nexport UP2DATE_URL=" + shlex.quote(URL) + "\nexport UP2DATE_TOKEN=" + shlex.quote(token) + "\n"
+    script = ("set -eu\nexport UP2DATE_URL=" + shlex.quote(URL) + "\nexport UP2DATE_TOKEN=" + shlex.quote(token)
+              + "\nexport UP2DATE_UPDATE=" + shlex.quote(UPDATE) + "\n"
               + "tmp=$(mktemp); trap 'rm -f \"$tmp\"' EXIT; curl -fsSL " + shlex.quote(INSTALLER) + " -o \"$tmp\"; bash \"$tmp\" agent \"$UP2DATE_URL\"\n")
     code, out = guest(kind, vmid, script, 600)
     if code:
@@ -115,6 +117,8 @@ def main():
         raise ValueError('UP2DATE_URL is required')
     if not SECRET:
         raise ValueError('UP2DATE_ENROLLMENT_SECRET is required')
+    if UPDATE not in ('off', 'all', 'same-major'):
+        raise ValueError('UP2DATE_UPDATE must be off, all or same-major')
     STATE.mkdir(mode=0o700, parents=True, exist_ok=True)
     with open(STATE / 'lock', 'w') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)

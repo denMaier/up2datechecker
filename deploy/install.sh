@@ -11,6 +11,7 @@
 #   server: UP2DATE_PUBLIC_URL UP2DATE_OIDC_ISSUER UP2DATE_OIDC_CLIENT_ID UP2DATE_OIDC_CLIENT_SECRET
 #           UP2DATE_ALLOWED_USERS UP2DATE_ALLOWED_GROUPS UP2DATE_LISTEN
 #   agent:  UP2DATE_URL UP2DATE_TOKEN
+#   both:   UP2DATE_UPDATE=off|all|same-major (install new releases automatically)
 #   UP2DATE_VERSION=v0.1.0 (default: the latest release)
 set -Eeuo pipefail
 
@@ -122,6 +123,7 @@ server() {
   sleep 1
   systemctl is-active --quiet up2date.service || die "up2date did not start: journalctl -u up2date"
   msg "Up2Date runs on $UP2DATE_LISTEN; put a TLS reverse proxy for $UP2DATE_PUBLIC_URL in front"
+  auto_update "$tag"
 }
 
 agent() {
@@ -144,6 +146,7 @@ agent() {
     } >"$f.new"
     mv "$f.new" "$f"
   )
+  auto_update "$tag"
 
   if [[ -d /run/systemd/system ]]; then
     unit up2date-agent.service "$tag"
@@ -173,6 +176,58 @@ EOF
   fi
 }
 
+# auto_update TAG: asks once whether to install new releases automatically, and keeps the answer
+# in update.env. all: every release; same-major: only releases of the installed major version.
+# The download is checked against the release's SHA256SUMS, as here.
+auto_update() {
+  local f=$ETC/update.env major=${1%%.*}
+  [[ -n ${UP2DATE_UPDATE:-} ]] || UP2DATE_UPDATE=$(envget UP2DATE_UPDATE "$f")
+  UP2DATE_UPDATE=$(tr -d '[:space:]' <<<"${UP2DATE_UPDATE,,}")
+  until [[ $UP2DATE_UPDATE =~ ^(off|all|same-major)$ ]]; do
+    [[ -z $UP2DATE_UPDATE ]] || echo " Please answer off, all or same-major"
+    UP2DATE_UPDATE=
+    ask UP2DATE_UPDATE "Install new Up2Date releases automatically: off, all, or same-major (stay on $major.x)" off
+    UP2DATE_UPDATE=$(tr -d '[:space:]' <<<"${UP2DATE_UPDATE,,}")
+  done
+  install -d -m 0700 "$ETC"
+  (
+    umask 077
+    envline UP2DATE_UPDATE "$UP2DATE_UPDATE" >"$f.new"
+    mv "$f.new" "$f"
+  )
+
+  if [[ -d /run/systemd/system ]]; then
+    if [[ $UP2DATE_UPDATE == off ]]; then
+      systemctl disable --now up2date-update.timer >/dev/null 2>&1 || true
+      rm -f /etc/systemd/system/up2date-update.service /etc/systemd/system/up2date-update.timer
+      systemctl daemon-reload
+    else
+      unit up2date-update.service "$1"
+      unit up2date-update.timer "$1"
+      systemctl daemon-reload
+      systemctl enable --now up2date-update.timer >/dev/null 2>&1
+    fi
+  elif [[ -d /etc/periodic/daily ]]; then
+    if [[ $UP2DATE_UPDATE == off ]]; then
+      rm -f /etc/periodic/daily/up2date-update
+    else
+      cat >/etc/periodic/daily/up2date-update <<EOF
+#!/bin/sh
+set -a; . $f; set +a
+exec $BIN update >/dev/null
+EOF
+      chmod 0755 /etc/periodic/daily/up2date-update
+    fi
+  else
+    [[ $UP2DATE_UPDATE == off ]] || die "No systemd and no periodic cron directory: run '$BIN update' from your scheduler"
+  fi
+  if [[ $UP2DATE_UPDATE == off ]]; then
+    msg "Automatic updates are off; run this installer again to update"
+  else
+    msg "New releases ($UP2DATE_UPDATE) are installed daily; see $f"
+  fi
+}
+
 # Install the optional Proxmox node-local guest discovery timer.
 discover() {
   [[ -d /run/systemd/system ]] || die "Discovery needs systemd"
@@ -182,14 +237,14 @@ discover() {
     [[ ! -e /etc/systemd/system/$u ]] || die "Remove or migrate the overriding /etc/systemd/system/$u before installing the shared unit"
   done
   local f=$ETC/discovery.env
-  for k in UP2DATE_URL UP2DATE_ENROLLMENT_SECRET UP2DATE_INCLUDE UP2DATE_EXCLUDE; do
+  for k in UP2DATE_URL UP2DATE_ENROLLMENT_SECRET UP2DATE_INCLUDE UP2DATE_EXCLUDE UP2DATE_UPDATE; do
     [[ -n ${!k:-} ]] || printf -v "$k" '%s' "$(envget "$k" "$f")"
   done
   ask UP2DATE_URL "Up2Date URL (https://…)"
   ask_secret UP2DATE_ENROLLMENT_SECRET "Enrollment secret"
   [[ -n $UP2DATE_ENROLLMENT_SECRET ]] || die "Enrollment secret is required"
   install -d -m 0700 "$ETC"
-  ( umask 077; for k in UP2DATE_URL UP2DATE_ENROLLMENT_SECRET UP2DATE_INCLUDE UP2DATE_EXCLUDE; do envline "$k" "${!k:-}"; done >"$f.new"; mv "$f.new" "$f" )
+  ( umask 077; for k in UP2DATE_URL UP2DATE_ENROLLMENT_SECRET UP2DATE_INCLUDE UP2DATE_EXCLUDE UP2DATE_UPDATE; do envline "$k" "${!k:-}"; done >"$f.new"; mv "$f.new" "$f" )
   install -d -m 0755 /usr/local/libexec
   install -d -m 0755 /usr/local/lib/systemd/system
   if [[ -f $SCRIPT_DIR/up2date-discover.py ]]; then

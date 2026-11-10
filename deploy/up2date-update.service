@@ -1,0 +1,34 @@
+# Installs new Up2Date releases: /etc/systemd/system/up2date-update.service, started by its
+# timer. Only installed when you choose automatic updates; the choice is in
+# /etc/up2date/update.env.
+#
+# It may write /usr/local/bin, where the binary is replaced, and nothing else. It restarts the
+# dashboard after an update if it runs on this machine.
+[Unit]
+Description=Up2Date: install a newer release
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/up2date update
+EnvironmentFile=-/etc/up2date/update.env
+TimeoutStartSec=15min
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/usr/local/bin
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHostname=yes
+ProtectClock=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+SystemCallArchitectures=native
