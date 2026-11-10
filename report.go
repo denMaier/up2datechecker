@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -9,16 +10,36 @@ import (
 
 // Report is what an agent sends: the state of one server's packages and services
 type Report struct {
-	Agent          string       `json:"agent"` // agent version
-	Hostname       string       `json:"hostname"`
-	OS             string       `json:"os"`
-	Kernel         string       `json:"kernel"`
-	Manager        string       `json:"manager"` // apt, dnf, apk or pacman
-	Updates        []Update     `json:"updates"`
-	RebootRequired bool         `json:"rebootRequired"`
-	BootTime       time.Time    `json:"bootTime,omitzero"`
-	FailedUnits    []FailedUnit `json:"failedUnits,omitempty"`
-	Error          string       `json:"error,omitempty"` // why collecting failed, partly or entirely
+	Agent          string             `json:"agent"` // agent version
+	Hostname       string             `json:"hostname"`
+	OS             string             `json:"os"`
+	Kernel         string             `json:"kernel"`
+	Machine        string             `json:"machine,omitempty"` // see machineKinds; empty when unknown
+	Manager        string             `json:"manager"`           // apt, dnf, apk or pacman
+	Updates        []Update           `json:"updates"`
+	RebootRequired bool               `json:"rebootRequired"`
+	AutoSecurity   AutoSecurityStatus `json:"autoSecurity,omitempty"`
+	BootTime       time.Time          `json:"bootTime,omitzero"`
+	FailedUnits    []FailedUnit       `json:"failedUnits,omitempty"`
+	Error          string             `json:"error,omitempty"` // why collecting failed, partly or entirely
+}
+
+// machineKinds are what a host runs as, as far as ignore patterns and the dashboard tell them
+// apart. An agent may also report "container" for a container other than LXC (Docker, nspawn).
+var machineKinds = []string{"vm", "lxc", "metal"}
+
+func machineLabel(kind string) string {
+	switch kind {
+	case "vm":
+		return "VM"
+	case "lxc":
+		return "LXC"
+	case "metal":
+		return "Bare metal"
+	case "container":
+		return "Container"
+	}
+	return ""
 }
 
 // FailedUnit is a systemd unit in the failed state
@@ -52,6 +73,14 @@ func (r *Report) sanitize() error {
 		*s = clip(*s, maxFieldLen)
 	}
 	r.Error = clip(r.Error, maxErrorLen)
+	if r.Machine != "" && r.Machine != "container" && !slices.Contains(machineKinds, r.Machine) {
+		r.Machine = ""
+	}
+	switch r.AutoSecurity {
+	case "", AutoSecurityEnabled, AutoSecurityDisabled, AutoSecurityUnknown:
+	default:
+		r.AutoSecurity = AutoSecurityUnknown
+	}
 	for i := range r.Updates {
 		u := &r.Updates[i]
 		u.Name, u.Current, u.Available = clip(u.Name, maxFieldLen), clip(u.Current, maxFieldLen), clip(u.Available, maxFieldLen)

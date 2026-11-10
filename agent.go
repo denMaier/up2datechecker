@@ -147,6 +147,7 @@ func collect(ctx context.Context, refresh bool) *Report {
 	rep.Hostname, _ = os.Hostname()
 	rep.OS = osName(ctx)
 	rep.Kernel = readTrim("/proc/sys/kernel/osrelease")
+	rep.Machine = machineKind(ctx)
 	rep.BootTime = bootTime()
 
 	var errs []string
@@ -154,6 +155,7 @@ func collect(ctx context.Context, refresh bool) *Report {
 		errs = append(errs, "no supported package manager found (apt, dnf, apk, pacman)")
 	} else {
 		rep.Manager = m.name
+		rep.AutoSecurity = autoSecurity(ctx, m.name)
 		refreshed := false
 		if refresh && m.refresh != nil {
 			if _, err := run(ctx, m.refresh[0], m.refresh[1:]...); err != nil {
@@ -181,6 +183,33 @@ func collect(ctx context.Context, refresh bool) *Report {
 	rep.FailedUnits = units
 	rep.Error = strings.Join(errs, "; ")
 	return rep
+}
+
+// machineKind tells a VM, an LXC container and bare metal apart; "" when it can't
+func machineKind(ctx context.Context) string {
+	if _, err := exec.LookPath("systemd-detect-virt"); err != nil {
+		// Without systemd (Alpine): LXC still sets container=lxc for its init
+		if env, _ := os.ReadFile("/proc/1/environ"); bytes.Contains(env, []byte("container=lxc\x00")) {
+			return "lxc"
+		}
+		return ""
+	}
+	// Both exit 1 and print "none" when there is nothing to detect
+	if out, code, _ := runCode(ctx, "systemd-detect-virt", "--container"); code == 0 {
+		if strings.HasPrefix(strings.TrimSpace(string(out)), "lxc") {
+			return "lxc"
+		}
+		return "container"
+	} else if code != 1 {
+		return ""
+	}
+	switch _, code, _ := runCode(ctx, "systemd-detect-virt", "--vm"); code {
+	case 0:
+		return "vm"
+	case 1:
+		return "metal"
+	}
+	return ""
 }
 
 func findManager() *manager {

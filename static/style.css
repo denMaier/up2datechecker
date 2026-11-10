@@ -69,6 +69,9 @@ th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--bor
 th { font-weight: 600; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
 tr:last-child td { border-bottom: 0; }
 .num { text-align: right; }
+.filters { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 12px; }
+.filters a { padding: 3px 10px; border: 1px solid transparent; border-radius: 999px; color: var(--text); }
+.filters a.on { background: var(--panel); border-color: var(--border); font-weight: 600; }
 .reasons { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
 ul.reasons { font-size: 14px; color: var(--bad); }
 
@@ -88,6 +91,7 @@ form.inline button { padding: 2px 8px; font-size: 12.5px; }
 ul.ignored { padding-left: 1.2em; }
 ul.ignored li { margin: 4px 0; }
 form.settings { display: grid; gap: 8px; justify-items: start; }
+form.settings label { display: grid; gap: 4px; width: 100%; font-weight: 600; }
 textarea { width: 100%; font: 13px/1.5 var(--mono); color: inherit; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }
 header a { color: var(--text); }
 input, button { font: inherit; color: inherit; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }

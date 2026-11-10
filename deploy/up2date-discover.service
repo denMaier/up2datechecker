@@ -1,0 +1,13 @@
+[Unit]
+Description=Enroll local Proxmox guests in Up2Date
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/up2date/discovery.env
+ExecStart=/usr/local/libexec/up2date-discover
+StandardOutput=journal
+StandardError=journal
+UMask=0077
+TimeoutStartSec=0

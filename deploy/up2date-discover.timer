@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodically enroll local Proxmox guests in Up2Date
+
+[Timer]
+OnBootSec=5min
+OnUnitInactiveSec=1h
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

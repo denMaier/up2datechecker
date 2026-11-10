@@ -8,13 +8,22 @@
   {{with .Counts.never}}<div class="stat never"><b>{{.}}</b> without a report</div>{{end}}
 </div>
 
+{{if .Total}}
+<nav class="filters">
+  <a href="/"{{if not .Machine}} class="on"{{end}}>All <span class="muted">{{.Total}}</span></a>
+  {{range .Filters}}<a href="/?machine={{.Kind}}"{{if .On}} class="on"{{end}}>{{.Label}} <span class="muted">{{.Count}}</span></a>
+  {{end}}
+</nav>
+{{end}}
+
 {{if .Hosts}}
 <table>
-  <thead><tr><th>Host</th><th>Status</th><th class="num">Updates</th><th class="num">Security</th><th>System</th><th>Last report</th></tr></thead>
+  <thead><tr><th>Host</th><th>Hostname</th><th>Type</th><th>Status</th><th class="num">Updates</th><th class="num">Security</th><th>System</th><th>Last report</th></tr></thead>
   <tbody>
   {{range .Hosts}}{{$h := .}}
   <tr>
     <td><a href="/hosts/{{.Name}}"><b>{{.Name}}</b></a></td>
+    {{with .Report}}<td class="mono">{{.Hostname}}</td><td>{{or (machine .Machine) "–"}}</td>{{else}}<td class="muted">–</td><td class="muted">–</td>{{end}}
     <td><span class="badge {{.Status}}">{{.Status.Label}}</span>{{with .Reasons}}<div class="reasons">{{range $i, $r := .}}{{if $i}} · {{end}}{{$r}}{{end}}</div>{{end}}</td>
     {{with .Report}}
     <td class="num">{{len .Updates}}</td>
@@ -28,6 +37,8 @@
   {{end}}
   </tbody>
 </table>
+{{else if .Machine}}
+<p class="muted">No hosts of this type.</p>
 {{else}}
 <p class="muted">No hosts yet. Add one below, then install the agent on it.</p>
 {{end}}

@@ -17,6 +17,7 @@ set -Eeuo pipefail
 REPO=denMaier/up2datechecker
 BIN=/usr/local/bin/up2date
 ETC=/etc/up2date
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-.}")" && pwd)
 
 msg() { printf ' \033[1;92m✔\033[m %s\n' "$1"; }
 die() {
@@ -88,7 +89,7 @@ unit() {
 server() {
   [[ -d /run/systemd/system ]] || die "The server needs systemd"
   local f=$ETC/server.env
-  for k in UP2DATE_PUBLIC_URL UP2DATE_OIDC_ISSUER UP2DATE_OIDC_CLIENT_ID UP2DATE_OIDC_CLIENT_SECRET UP2DATE_ALLOWED_USERS UP2DATE_ALLOWED_GROUPS UP2DATE_LISTEN UP2DATE_STALE_HOURS; do
+  for k in UP2DATE_PUBLIC_URL UP2DATE_OIDC_ISSUER UP2DATE_OIDC_CLIENT_ID UP2DATE_OIDC_CLIENT_SECRET UP2DATE_ALLOWED_USERS UP2DATE_ALLOWED_GROUPS UP2DATE_LISTEN UP2DATE_STALE_HOURS UP2DATE_ENROLLMENT_SECRET; do
     [[ -n ${!k:-} ]] || printf -v "$k" '%s' "$(envget "$k" "$f")"
   done
   ask UP2DATE_PUBLIC_URL "Public URL (https://…)"
@@ -109,7 +110,7 @@ server() {
   install -d -m 0700 "$ETC"
   (
     umask 077
-    for k in UP2DATE_LISTEN UP2DATE_PUBLIC_URL UP2DATE_OIDC_ISSUER UP2DATE_OIDC_CLIENT_ID UP2DATE_OIDC_CLIENT_SECRET UP2DATE_ALLOWED_USERS UP2DATE_ALLOWED_GROUPS UP2DATE_STALE_HOURS; do
+    for k in UP2DATE_LISTEN UP2DATE_PUBLIC_URL UP2DATE_OIDC_ISSUER UP2DATE_OIDC_CLIENT_ID UP2DATE_OIDC_CLIENT_SECRET UP2DATE_ALLOWED_USERS UP2DATE_ALLOWED_GROUPS UP2DATE_STALE_HOURS UP2DATE_ENROLLMENT_SECRET; do
       [[ -n ${!k:-} ]] && envline "$k" "${!k}"
     done >"$f.new"
     mv "$f.new" "$f"
@@ -172,6 +173,40 @@ EOF
   fi
 }
 
+# Install the optional Proxmox node-local guest discovery timer.
+discover() {
+  [[ -d /run/systemd/system ]] || die "Discovery needs systemd"
+  command -v pvesh >/dev/null || die "Discovery needs Proxmox VE"
+  command -v python3 >/dev/null || die "Discovery needs Python 3"
+  for u in up2date-discover.service up2date-discover.timer; do
+    [[ ! -e /etc/systemd/system/$u ]] || die "Remove or migrate the overriding /etc/systemd/system/$u before installing the shared unit"
+  done
+  local f=$ETC/discovery.env
+  for k in UP2DATE_URL UP2DATE_ENROLLMENT_SECRET UP2DATE_INCLUDE UP2DATE_EXCLUDE; do
+    [[ -n ${!k:-} ]] || printf -v "$k" '%s' "$(envget "$k" "$f")"
+  done
+  ask UP2DATE_URL "Up2Date URL (https://…)"
+  ask_secret UP2DATE_ENROLLMENT_SECRET "Enrollment secret"
+  [[ -n $UP2DATE_ENROLLMENT_SECRET ]] || die "Enrollment secret is required"
+  install -d -m 0700 "$ETC"
+  ( umask 077; for k in UP2DATE_URL UP2DATE_ENROLLMENT_SECRET UP2DATE_INCLUDE UP2DATE_EXCLUDE; do envline "$k" "${!k:-}"; done >"$f.new"; mv "$f.new" "$f" )
+  install -d -m 0755 /usr/local/libexec
+  install -d -m 0755 /usr/local/lib/systemd/system
+  if [[ -f $SCRIPT_DIR/up2date-discover.py ]]; then
+    install -m 0755 "$SCRIPT_DIR/up2date-discover.py" /usr/local/libexec/up2date-discover
+    install -m 0644 "$SCRIPT_DIR/up2date-discover.service" "$SCRIPT_DIR/up2date-discover.timer" /usr/local/lib/systemd/system/
+  else
+    curl -fsSL -o /usr/local/libexec/up2date-discover "https://raw.githubusercontent.com/$REPO/main/deploy/up2date-discover.py"
+    chmod 0755 /usr/local/libexec/up2date-discover
+    for u in up2date-discover.service up2date-discover.timer; do
+      curl -fsSL -o "/usr/local/lib/systemd/system/$u" "https://raw.githubusercontent.com/$REPO/main/deploy/$u"
+    done
+  fi
+  systemctl daemon-reload
+  systemctl enable --now up2date-discover.timer
+  msg "Guest discovery enabled; configure include/exclude in $f"
+}
+
 # hooks CMD: report right after apt or pacman installed something, so the dashboard is current
 hooks() {
   if [[ -d /etc/apt/apt.conf.d ]]; then
@@ -200,5 +235,6 @@ cd /
 case ${1:-} in
 server) server ;;
 agent) agent "${2:-}" ;;
-*) die "Usage: install.sh server | agent [URL]" ;;
+discover) discover ;;
+*) die "Usage: install.sh server | agent [URL] | discover" ;;
 esac

@@ -100,7 +100,7 @@ func TestFlow(t *testing.T) {
 		t.Fatalf("bad name: %d", w.Code)
 	}
 
-	report := `{"agent":"t","hostname":"pve1","os":"Debian <b>13</b>","manager":"apt","rebootRequired":false,
+	report := `{"agent":"t","hostname":"web-01","machine":"lxc","os":"Debian <b>13</b>","manager":"apt","rebootRequired":false,
 		"updates":[{"name":"libssl3","current":"1","available":"2","security":true},{"name":"curl","available":"8"}],
 		"failedUnits":[{"unit":"backup.service","description":"Nightly backup"}],
 		"futureField":true}`
@@ -125,6 +125,13 @@ func TestFlow(t *testing.T) {
 	}
 	if strings.Contains(body, "<b>13</b>") || !strings.Contains(body, "Debian &lt;b&gt;13&lt;/b&gt;") {
 		t.Fatal("report values must be escaped")
+	}
+	if !strings.Contains(body, "web-01") || !strings.Contains(body, "<td>LXC</td>") {
+		t.Fatalf("dashboard should show the hostname and type: %s", body)
+	}
+	if !strings.Contains(do(t, h, req{method: "GET", url: "/?machine=lxc", cookie: c}).Body.String(), "/hosts/pve1") ||
+		strings.Contains(do(t, h, req{method: "GET", url: "/?machine=vm", cookie: c}).Body.String(), "/hosts/pve1") {
+		t.Fatal("type filter")
 	}
 
 	w = do(t, h, req{method: "GET", url: "/hosts/pve1", cookie: c})
@@ -152,7 +159,13 @@ func TestFlow(t *testing.T) {
 	if w := do(t, h, req{method: "POST", url: "/settings", body: "ignoreUnits=" + url.QueryEscape("[bad"), cookie: c}); w.Code != 400 || !strings.Contains(w.Body.String(), "not a valid pattern") {
 		t.Fatalf("bad pattern: %d", w.Code)
 	}
-	if w := do(t, h, req{method: "POST", url: "/settings", body: "ignoreUnits=" + url.QueryEscape("backup.*\r\nfoo.service"), cookie: c}); w.Code != 303 {
+	if w := do(t, h, req{method: "POST", url: "/settings", body: "ignoreUnits-vm=" + url.QueryEscape("backup.*"), cookie: c}); w.Code != 303 {
+		t.Fatalf("settings: %d", w.Code)
+	}
+	if strings.Contains(do(t, h, req{method: "GET", url: "/settings", cookie: c}).Body.String(), "pve1: backup.service") {
+		t.Fatal("a VM pattern ignored a unit in an LXC container")
+	}
+	if w := do(t, h, req{method: "POST", url: "/settings", body: "ignoreUnits-lxc=" + url.QueryEscape("backup.*\r\nfoo.service"), cookie: c}); w.Code != 303 {
 		t.Fatalf("settings: %d", w.Code)
 	}
 	w = do(t, h, req{method: "GET", url: "/settings", cookie: c})

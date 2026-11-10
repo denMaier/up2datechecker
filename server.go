@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"cmp"
+	"crypto/subtle"
 	"embed"
 	"encoding/json"
 	"html/template"
@@ -34,7 +35,8 @@ func NewServer(cfg *Config, store *Store) *Server {
 			}
 			return humanDuration(time.Since(t)) + " ago"
 		},
-		"date": func(t time.Time) string { return t.Local().Format("2006-01-02 15:04") },
+		"date":    func(t time.Time) string { return t.Local().Format("2006-01-02 15:04") },
+		"machine": machineLabel,
 		"unitAction": func(host, key, action, label string) map[string]string {
 			return map[string]string{"Host": host, "Key": key, "Action": action, "Label": label}
 		},
@@ -54,6 +56,7 @@ func (s *Server) Routes() http.Handler {
 
 	// Agents authenticate with their host's bearer token, not a session
 	mux.HandleFunc("POST /api/report", s.report)
+	mux.HandleFunc("POST /api/enroll", s.enroll)
 
 	static, _ := fs.Sub(assets, "static")
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(static)))
@@ -118,6 +121,28 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, status int, page
 
 const maxReportBytes = 2 << 20
 
+// Enrollment is optional; its secret can create host records but cannot rotate existing tokens.
+func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
+	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if !ok || s.cfg.EnrollmentSecret == "" || subtle.ConstantTimeCompare([]byte(token), []byte(s.cfg.EnrollmentSecret)) != 1 {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var req struct {
+		Name  string `json:"name"`
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	if err := s.store.Enroll(req.Name, req.Token); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // POST /api/report with Authorization: Bearer <token>. The token decides which host the
 // report belongs to; a host can only ever overwrite its own record.
 func (s *Server) report(w http.ResponseWriter, r *http.Request) {
@@ -173,11 +198,23 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, status int, errMsg string) {
+	// ?machine=vm|lxc|metal shows only hosts of that kind
+	machine := r.URL.Query().Get("machine")
+	if !slices.Contains(machineKinds, machine) {
+		machine = ""
+	}
 	hosts := s.store.List()
 	rows := make([]hostRow, 0, len(hosts))
 	counts := map[string]int{}
+	kinds := map[string]int{}
 	p := s.policy()
 	for _, h := range hosts {
+		if h.Report != nil {
+			kinds[h.Report.Machine]++
+		}
+		if machine != "" && (h.Report == nil || h.Report.Machine != machine) {
+			continue
+		}
 		row := s.row(h, p)
 		counts[row.Status.String()]++
 		rows = append(rows, row)
@@ -186,7 +223,11 @@ func (s *Server) renderDashboard(w http.ResponseWriter, r *http.Request, status 
 	slices.SortFunc(rows, func(a, b hostRow) int {
 		return cmp.Or(cmp.Compare(a.Status, b.Status), cmp.Compare(a.Name, b.Name))
 	})
-	s.render(w, r, status, "dashboard", map[string]any{"Hosts": rows, "Counts": counts, "Error": errMsg})
+	var filters []map[string]any
+	for _, kind := range machineKinds {
+		filters = append(filters, map[string]any{"Kind": kind, "Label": machineLabel(kind), "Count": kinds[kind], "On": kind == machine})
+	}
+	s.render(w, r, status, "dashboard", map[string]any{"Hosts": rows, "Counts": counts, "Filters": filters, "Machine": machine, "Total": len(hosts), "Error": errMsg})
 }
 
 func (s *Server) host(w http.ResponseWriter, r *http.Request) {
@@ -238,11 +279,25 @@ func (s *Server) setUnit(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/hosts/"+url.PathEscape(name)+"#services", http.StatusSeeOther)
 }
 
-func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
-	s.renderSettings(w, r, http.StatusOK, strings.Join(s.store.IgnorePatterns(), "\n"), "")
+// ignoreScopes are the settings' pattern lists: the form field and the machine kind ("" for every
+// host) of each
+var ignoreScopes = []struct{ Field, Kind, Label string }{
+	{"ignoreUnits", "", "Every host"},
+	{"ignoreUnits-vm", "vm", "VMs only"},
+	{"ignoreUnits-lxc", "lxc", "LXC containers only"},
+	{"ignoreUnits-metal", "metal", "Bare metal only"},
 }
 
-func (s *Server) renderSettings(w http.ResponseWriter, r *http.Request, status int, patterns, errMsg string) {
+func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
+	texts := map[string]string{}
+	for kind, pats := range s.store.IgnorePatterns() {
+		texts[kind] = strings.Join(pats, "\n")
+	}
+	s.renderSettings(w, r, http.StatusOK, texts, "")
+}
+
+// renderSettings shows the pattern lists, as text by machine kind
+func (s *Server) renderSettings(w http.ResponseWriter, r *http.Request, status int, texts map[string]string, errMsg string) {
 	// Which failed units each pattern silences right now, as a check of what it does
 	matches := map[string][]string{}
 	p := s.policy()
@@ -256,13 +311,22 @@ func (s *Server) renderSettings(w http.ResponseWriter, r *http.Request, status i
 			}
 		}
 	}
-	s.render(w, r, status, "settings", map[string]any{"Patterns": patterns, "Matches": matches, "Error": errMsg})
+	var scopes []map[string]string
+	for _, sc := range ignoreScopes {
+		scopes = append(scopes, map[string]string{"Field": sc.Field, "Label": sc.Label, "Text": texts[sc.Kind]})
+	}
+	s.render(w, r, status, "settings", map[string]any{"Scopes": scopes, "Matches": matches, "Error": errMsg})
 }
 
 func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
-	text := r.PostFormValue("ignoreUnits")
-	if err := s.store.SetIgnorePatterns(strings.Split(text, "\n")); err != nil {
-		s.renderSettings(w, r, http.StatusBadRequest, text, err.Error())
+	texts := map[string]string{}
+	patterns := map[string][]string{}
+	for _, sc := range ignoreScopes {
+		texts[sc.Kind] = r.PostFormValue(sc.Field)
+		patterns[sc.Kind] = strings.Split(texts[sc.Kind], "\n")
+	}
+	if err := s.store.SetIgnorePatterns(patterns); err != nil {
+		s.renderSettings(w, r, http.StatusBadRequest, texts, err.Error())
 		return
 	}
 	http.Redirect(w, r, "/settings", http.StatusSeeOther)

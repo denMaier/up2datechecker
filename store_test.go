@@ -118,7 +118,7 @@ func TestQuietUnits(t *testing.T) {
 	backup := FailedUnit{Unit: "backup.service"}
 	worker := FailedUnit{Unit: "worker.service", User: "quadlets"}
 	modules := FailedUnit{Unit: "systemd-modules-load.service"}
-	s.SaveReport("box", &Report{FailedUnits: []FailedUnit{backup, worker, modules}}, now)
+	s.SaveReport("box", &Report{Machine: "lxc", FailedUnits: []FailedUnit{backup, worker, modules}}, now)
 	count := func() int {
 		h, _ := s.Get("box")
 		return h.FailedCount(Policy{IgnoreUnits: s.IgnorePatterns()})
@@ -127,13 +127,22 @@ func TestQuietUnits(t *testing.T) {
 		t.Fatal("all count at first")
 	}
 
-	if err := s.SetIgnorePatterns([]string{"systemd-modules-*", "", "systemd-modules-*"}); err != nil {
+	// A pattern for VMs leaves this LXC container alone; one for LXC applies
+	if err := s.SetIgnorePatterns(map[string][]string{"vm": {"systemd-modules-*"}}); err != nil {
 		t.Fatal(err)
 	}
-	if s.SetIgnorePatterns([]string{"[unclosed"}) == nil || s.SetIgnorePatterns([]string{"a/b"}) == nil {
-		t.Fatal("bad patterns accepted")
+	if count() != 3 {
+		t.Fatal("a VM pattern applied to an LXC container")
 	}
-	if p := s.IgnorePatterns(); len(p) != 1 || count() != 2 {
+	if err := s.SetIgnorePatterns(map[string][]string{"lxc": {"systemd-modules-*", "", "systemd-modules-*"}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []map[string][]string{{"": {"[unclosed"}}, {"": {"a/b"}}, {"docker": {"x"}}} {
+		if s.SetIgnorePatterns(bad) == nil {
+			t.Fatalf("bad patterns accepted: %v", bad)
+		}
+	}
+	if p := s.IgnorePatterns(); len(p["lxc"]) != 1 || len(p["vm"]) != 0 || count() != 2 {
 		t.Fatalf("pattern: %v %d", p, count())
 	}
 
@@ -170,7 +179,7 @@ func TestQuietUnits(t *testing.T) {
 		t.Fatal(err)
 	}
 	h, _ := s2.Get("box")
-	if len(s2.IgnorePatterns()) != 1 || len(h.IgnoredUnits) != 1 {
+	if len(s2.IgnorePatterns()["lxc"]) != 1 || len(h.IgnoredUnits) != 1 {
 		t.Fatalf("reloaded: %v %v", s2.IgnorePatterns(), h.IgnoredUnits)
 	}
 }

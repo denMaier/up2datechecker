@@ -35,7 +35,7 @@ type Host struct {
 // Policy decides what needs attention
 type Policy struct {
 	StaleAge    time.Duration
-	IgnoreUnits []string // glob patterns of unit names, ignored on every host
+	IgnoreUnits map[string][]string // glob patterns of unit names, by machine kind; "" for every host
 }
 
 // unitKey identifies a unit on a host: "/name.service" for system units, "account/name.service"
@@ -47,7 +47,11 @@ func unitKey(u FailedUnit) string {
 // Quiet says why a failed unit does not count ("pattern", "ignored", "acknowledged"), or ""
 // when it does. For "pattern", the second value is the matching pattern.
 func (h *Host) Quiet(u FailedUnit, p Policy) (string, string) {
-	for _, pat := range p.IgnoreUnits {
+	pats := p.IgnoreUnits[""]
+	if h.Report != nil && h.Report.Machine != "" {
+		pats = slices.Concat(pats, p.IgnoreUnits[h.Report.Machine])
+	}
+	for _, pat := range pats {
 		if ok, _ := path.Match(pat, u.Unit); ok {
 			return "pattern", pat
 		}
@@ -83,6 +87,9 @@ func (h *Host) Reasons(p Policy, now time.Time) []string {
 	var out []string
 	if n := r.SecurityCount(); n > 0 {
 		out = append(out, plural(n, "security update"))
+	}
+	if r.AutoSecurity == AutoSecurityDisabled {
+		out = append(out, "APT unattended upgrades are not enabled")
 	}
 	if r.RebootRequired {
 		out = append(out, "reboot required")
@@ -123,17 +130,19 @@ type Store struct {
 
 	mu          sync.RWMutex
 	hosts       map[string]*Host
-	byHash      map[string]string // token hash → host name
-	ignoreUnits []string
+	byHash      map[string]string   // token hash → host name
+	ignoreUnits map[string][]string // see Policy
 }
 
 type stateFile struct {
 	Hosts       []*Host  `json:"hosts"`
-	IgnoreUnits []string `json:"ignoreUnits,omitempty"`
+	IgnoreUnits []string `json:"ignoreUnits,omitempty"` // on every host
+	// On hosts of one machine kind
+	IgnoreUnitsOn map[string][]string `json:"ignoreUnitsOn,omitempty"`
 }
 
 func OpenStore(path string) (*Store, error) {
-	s := &Store{path: path, hosts: map[string]*Host{}, byHash: map[string]string{}}
+	s := &Store{path: path, hosts: map[string]*Host{}, byHash: map[string]string{}, ignoreUnits: map[string][]string{}}
 	b, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return s, nil
@@ -150,7 +159,10 @@ func OpenStore(path string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	s.ignoreUnits = st.IgnoreUnits
+	s.ignoreUnits = map[string][]string{"": st.IgnoreUnits}
+	for _, kind := range machineKinds {
+		s.ignoreUnits[kind] = st.IgnoreUnitsOn[kind]
+	}
 	for _, h := range st.Hosts {
 		s.hosts[h.Name] = h
 		s.byHash[h.TokenHash] = h.Name
@@ -165,7 +177,13 @@ func (s *Store) save() error {
 		hosts = append(hosts, h)
 	}
 	slices.SortFunc(hosts, func(a, b *Host) int { return cmp.Compare(a.Name, b.Name) })
-	b, err := json.Marshal(stateFile{Hosts: hosts, IgnoreUnits: s.ignoreUnits})
+	st := stateFile{Hosts: hosts, IgnoreUnits: s.ignoreUnits[""], IgnoreUnitsOn: map[string][]string{}}
+	for _, kind := range machineKinds {
+		if pats := s.ignoreUnits[kind]; len(pats) > 0 {
+			st.IgnoreUnitsOn[kind] = pats
+		}
+	}
+	b, err := json.Marshal(st)
 	if err != nil {
 		return err
 	}
@@ -195,6 +213,33 @@ func hashToken(token string) string {
 
 func newToken() string {
 	return "u2d_" + randomHex(32)
+}
+
+// Enroll is idempotent for retries using the same token, and never replaces an existing token.
+func (s *Store) Enroll(name, token string) error {
+	if !hostNameRe.MatchString(name) || !regexp.MustCompile(`^u2d_[a-f0-9]{64}$`).MatchString(token) {
+		return errors.New("invalid host name or token")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	hash := hashToken(token)
+	if h, ok := s.hosts[name]; ok {
+		if h.TokenHash == hash {
+			return nil
+		}
+		return errors.New("host already exists")
+	}
+	if _, ok := s.byHash[hash]; ok {
+		return errors.New("token already in use")
+	}
+	s.hosts[name] = &Host{Name: name, TokenHash: hash, Created: time.Now().UTC()}
+	s.byHash[hash] = name
+	if err := s.save(); err != nil {
+		delete(s.hosts, name)
+		delete(s.byHash, hash)
+		return err
+	}
+	return nil
 }
 
 // List returns copies of all hosts
@@ -350,26 +395,37 @@ func (s *Store) SetUnit(name, key, action string) error {
 	return nil
 }
 
-func (s *Store) IgnorePatterns() []string {
+// IgnorePatterns returns the unit name patterns by machine kind; "" for every host
+func (s *Store) IgnorePatterns() map[string][]string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return slices.Clone(s.ignoreUnits)
+	out := map[string][]string{}
+	for kind, pats := range s.ignoreUnits {
+		out[kind] = slices.Clone(pats)
+	}
+	return out
 }
 
-// SetIgnorePatterns replaces the unit name patterns that are ignored on every host
-func (s *Store) SetIgnorePatterns(patterns []string) error {
-	var clean []string
-	for _, p := range patterns {
-		if p = strings.TrimSpace(p); p == "" || slices.Contains(clean, p) {
-			continue
+// SetIgnorePatterns replaces the unit name patterns, by machine kind ("" for every host). A kind
+// that is left out keeps no patterns.
+func (s *Store) SetIgnorePatterns(patterns map[string][]string) error {
+	clean := map[string][]string{}
+	for kind, pats := range patterns {
+		if kind != "" && !slices.Contains(machineKinds, kind) {
+			return fmt.Errorf("unknown machine kind %q", kind)
 		}
-		if _, err := path.Match(p, ""); err != nil || strings.Contains(p, "/") || len(p) > maxFieldLen {
-			return fmt.Errorf("%q is not a valid pattern", p)
+		for _, p := range pats {
+			if p = strings.TrimSpace(p); p == "" || slices.Contains(clean[kind], p) {
+				continue
+			}
+			if _, err := path.Match(p, ""); err != nil || strings.Contains(p, "/") || len(p) > maxFieldLen {
+				return fmt.Errorf("%q is not a valid pattern", p)
+			}
+			clean[kind] = append(clean[kind], p)
 		}
-		clean = append(clean, p)
-	}
-	if len(clean) > maxItems {
-		return errors.New("too many patterns")
+		if len(clean[kind]) > maxItems {
+			return errors.New("too many patterns")
+		}
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

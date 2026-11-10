@@ -7,10 +7,11 @@
 
 {{with $h.Report}}
 <dl class="facts">
-  <dt>System</dt><dd>{{.OS}}</dd>
+  <dt>System</dt><dd>{{.OS}}{{with machine .Machine}} ({{.}}){{end}}</dd>
   <dt>Kernel</dt><dd>{{.Kernel}}</dd>
   <dt>Packages</dt><dd>{{.Manager}}</dd>
   {{if not .BootTime.IsZero}}<dt>Booted</dt><dd>{{date .BootTime}}</dd>{{end}}
+  <dt>Automatic security updates</dt><dd>{{if eq .AutoSecurity "enabled"}}configured (APT unattended upgrades){{else if eq .AutoSecurity "disabled"}}<b class="bad">APT unattended upgrades not enabled</b>{{else}}unknown{{end}}</dd>
   <dt>Reboot required</dt><dd>{{if .RebootRequired}}<b class="bad">yes</b>{{else}}no{{end}}</dd>
   <dt>Last report</dt><dd>{{date $h.Received}} ({{ago $h.Received}})</dd>
   <dt>Agent</dt><dd>{{.Agent}}{{if ne .Hostname $h.Name}} on {{.Hostname}}{{end}}</dd>
@@ -29,7 +30,7 @@
     <td>{{.Description}}</td>
     <td class="actions">
     {{if eq .Quiet "pattern"}}
-      <span class="muted">ignored everywhere by <code>{{.Pattern}}</code> (<a href="/settings">settings</a>)</span>
+      <span class="muted">ignored by the pattern <code>{{.Pattern}}</code> (<a href="/settings">settings</a>)</span>
     {{else if eq .Quiet "ignored"}}
       <span class="muted">ignored on this host</span> {{template "unitAction" (unitAction $h.Name .Key "unignore" "Undo")}}
     {{else if eq .Quiet "acknowledged"}}

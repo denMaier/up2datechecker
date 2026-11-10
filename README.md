@@ -8,13 +8,14 @@ A small dashboard that shows which of your servers need attention: pending updat
 
 ![Host details showing failed services and a pending update](assets/screenshots/host.png)
 
-- **One page.** Every host with its status, most urgent first: *needs attention* (security updates, reboot required, failed services, no report for a day, agent error), *updates available*, *up to date*. Each host has a page listing its pending packages, security updates first.
+- **One page.** Every host with its hostname, type (VM, LXC or bare metal, filterable) and status, most urgent first: *needs attention* (security updates, reboot required, failed services, no report for a day, agent error), *updates available*, *up to date*. Each host has a page listing its pending packages, security updates first.
 - **Push, not pull.** A small agent on each server reports to the dashboard every 6 hours and right after you install or upgrade packages. The dashboard holds no SSH keys or other credentials for your servers and never connects to them.
 - **Failed systemd services**, of the system and of every account with lingering enabled, which is where rootless Quadlets run. A crashed Quadlet container shows up as its failed unit. With `HealthOnFailure=kill` in a Quadlet, a failing health check does too.
   - Units that fail as a matter of course can be quieted three ways. All of them stay listed, greyed out:
     - **Acknowledge** a failure on the host's page. It stops counting until a report shows the unit recovered, so if it fails again later, it counts again.
     - **Always ignore** it on that host.
-    - Ignore it on **every host** with name patterns such as `systemd-modules-load.service`, set on the Settings page. Changes apply at once.
+    - Ignore it on **every host**, or on every **VM**, **LXC container** or **bare-metal** host, with name patterns such as `systemd-modules-load.service`, set on the Settings page. Changes apply at once.
+- **Automatic security updates:** warns when APT unattended upgrades are not installed or scheduled. The agent checks the APT periodic setting, the systemd timer, and configured security origins; other package managers, custom schedulers, and older agents can show an unknown status.
 - **Package managers:** apt (Debian, Ubuntu, Proxmox VE), dnf (Fedora, RHEL, Alma, Rocky), apk (Alpine) and pacman (Arch, with `pacman-contrib` and `fakeroot`). apt and dnf mark security updates.
 - **Sign-in with OpenID Connect only** (Pocket ID, Authentik, Keycloak, …), limited to the listed users and/or groups. Up2Date refuses to start without such a list.
 - **Small.** One static Go binary is both the dashboard and the agent. It has two dependencies (go-oidc, oauth2). The pages are rendered on the server and use no JavaScript. State is a single JSON file. The dashboard uses about 10 MB of memory.
@@ -79,6 +80,27 @@ To check what the agent would send without sending it:
 up2date agent -dry-run
 ```
 
+### Optional Proxmox guest discovery
+
+The `discover` installer mode sets up a node-local systemd timer that enrolls running
+Proxmox containers and VMs. Install it on each Proxmox node; VMs need a running QEMU
+guest agent, and guests need `bash`, `curl`, and network access to the release and
+this dashboard. Unavailable guests are logged and retried without failing the whole
+discovery service. See `/var/log/up2date-discover.log` (rotated at 1 MiB with three
+backups) for guest errors and `systemctl status up2date-discover.service` for service
+failures. Existing agent installations are left in place.
+
+Set `UP2DATE_ENROLLMENT_SECRET` to a long random value in the dashboard's
+`/etc/up2date/server.env` and restart the dashboard. This optional credential permits
+creating host records, so keep it private and rotate it if a discovery node is lost.
+Run `bash deploy/install.sh discover` on each node and provide the same secret. The root-only
+`/etc/up2date/discovery.env` accepts `UP2DATE_INCLUDE` and `UP2DATE_EXCLUDE` as
+comma- or space-separated VMIDs, names, or `lxc/123` / `qemu/123` identifiers.
+An empty include list selects all running guests; exclusions take precedence.
+Each guest gets its own token. Retry state is kept in `/var/lib/up2date-discovery`;
+back it up securely when migrating a node. To remove the automation, disable
+`up2date-discover.timer` on each node. Removing it does not remove installed agents.
+
 ## Development
 
 `make dev` starts a test environment in Docker at <http://127.0.0.1:8484>. Sign in as `admin@example.com` / `password`. It has Dex for the login and agents on Debian, Ubuntu, Rocky and Alpine, some with old images so they have pending updates. It also has a Debian host that boots systemd, with failing services and rootful and rootless Quadlets, where the agent runs from its real units. `make dev-down` stops it, and `make dev-reset` also forgets the hosts. The setup is in [`dev/`](dev).
@@ -90,6 +112,8 @@ make release  # static linux/amd64 and linux/arm64 binaries and SHA256SUMS in di
 ```
 
 Pushing a `v*` tag builds a release on GitHub.
+
+Possible future work and its security constraints are described in [ROADMAP.md](ROADMAP.md).
 
 ## License
 

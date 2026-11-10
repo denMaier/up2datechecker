@@ -4,12 +4,16 @@
 <h1>Settings</h1>
 {{with .Error}}<p class="error">{{.}}</p>{{end}}
 
-<h2>Failed units ignored on every host</h2>
+<h2>Ignored failed units</h2>
 <p class="muted">One pattern per line, matched against the unit name: <code>*</code> stands for any characters, <code>?</code> for one,
-<code>[…]</code> for a set. For example <code>systemd-modules-load.service</code>, which fails in many containers, or <code>*-dev.service</code>.
+<code>[…]</code> for a set. For example <code>systemd-modules-load.service</code>, which fails in many LXC containers, or <code>*-dev.service</code>.
+A pattern can apply to every host or only to hosts of one type, as their agent reports it.
 To ignore a unit on one host only, use <b>Always ignore</b> on that host's page.</p>
 <form method="post" action="/settings" class="settings">
-  <textarea name="ignoreUnits" rows="8" spellcheck="false" placeholder="systemd-modules-load.service">{{.Patterns}}</textarea>
+  {{range .Scopes}}
+  <label>{{.Label}}
+  <textarea name="{{.Field}}" rows="4" spellcheck="false">{{.Text}}</textarea></label>
+  {{end}}
   <button>Save</button>
 </form>
 

@@ -31,7 +31,8 @@ type Config struct {
 	StateDir string        // hosts.json and the session secret
 	StaleAge time.Duration // a host that has not reported for this long needs attention
 
-	SessionSecret string
+	SessionSecret    string
+	EnrollmentSecret string
 }
 
 func env(key, def string) string {
@@ -63,7 +64,8 @@ func LoadConfig() (*Config, error) {
 		AllowedUsers:  list(env("UP2DATE_ALLOWED_USERS", "")),
 		AllowedGroups: list(env("UP2DATE_ALLOWED_GROUPS", "")),
 		// systemd's StateDirectory= sets STATE_DIRECTORY
-		StateDir: env("UP2DATE_STATE_DIR", env("STATE_DIRECTORY", "/var/lib/up2date")),
+		StateDir:         env("UP2DATE_STATE_DIR", env("STATE_DIRECTORY", "/var/lib/up2date")),
+		EnrollmentSecret: env("UP2DATE_ENROLLMENT_SECRET", ""),
 	}
 	hours, err := strconv.ParseFloat(env("UP2DATE_STALE_HOURS", "24"), 64)
 	if err != nil || hours <= 0 {
