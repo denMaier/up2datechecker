@@ -33,10 +33,10 @@ const maxBinaryBytes = 100 << 20
 
 // runUpdate replaces this binary with a newer release, checked against the release's SHA256SUMS,
 // and restarts the dashboard if it runs. When there is nothing newer, or any check fails, it
-// leaves everything as it was. UP2DATE_UPDATE=same-major keeps it on the current major version.
+// leaves everything as it was. It only runs when someone calls it: nothing schedules it.
 func runUpdate(args []string) error {
 	fs := flag.NewFlagSet("update", flag.ExitOnError)
-	sameMajor := fs.Bool("same-major", os.Getenv("UP2DATE_UPDATE") == "same-major", "only install releases of the current major version")
+	sameMajor := fs.Bool("same-major", false, "only install releases of the current major version")
 	fs.Parse(args)
 	if runtime.GOOS != "linux" {
 		return errors.New("updates are only published for Linux")

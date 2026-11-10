@@ -21,7 +21,7 @@ const usage = `usage:
       -dry-run             print the report instead of sending it
       -no-refresh          do not refresh the package lists first
   up2date update [flags]   install the newest release over this binary
-      -same-major          stay on the current major version (or UP2DATE_UPDATE=same-major)
+      -same-major          stay on the current major version
   up2date version
 `
 

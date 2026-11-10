@@ -82,19 +82,15 @@ up2date agent -dry-run
 
 ### Updates
 
-Running the installer again updates the binary and keeps the settings. It also asks, once,
-whether Up2Date should install new releases itself:
+Up2Date never updates itself on a schedule. To update a machine, run either of these on it:
 
-- `off`: only when you run the installer again;
-- `all`: every new release;
-- `same-major`: only releases of the installed major version (for v0.x: all of v0).
-
-The answer is kept in `/etc/up2date/update.env`. Unattended, set `UP2DATE_UPDATE`. With
-updates on, [`up2date-update.timer`](deploy/up2date-update.timer) runs `up2date update` daily
-(on Alpine, a job in `/etc/periodic/daily`). It downloads the release from GitHub and checks
-it against the release's `SHA256SUMS`. It confirms the new binary runs, then replaces
-`/usr/local/bin/up2date` and restarts the dashboard if it runs on that machine. If any step
-fails, the installed version stays. Unit files only change when you run the installer again.
+- `up2date update` installs the newest release over the binary (`-same-major` stays on the
+  installed major version). It downloads the release from GitHub and checks it against the
+  release's `SHA256SUMS`, confirms the new binary runs, then replaces `/usr/local/bin/up2date`
+  and restarts the dashboard if it runs on that machine. If any step fails, the installed
+  version stays.
+- Running the installer again does the same and also refreshes the unit files. It keeps the
+  settings.
 
 The checksum catches a broken download, not a forged release: whoever controls the GitHub
 repository controls both. The dashboard never triggers updates.
