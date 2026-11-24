@@ -15,7 +15,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          # Latest stable Go, so a Go security release is picked up without
+          # editing go.mod. go.mod stays the minimum; releases build with it.
+          go-version: stable
+          check-latest: true
       - run: make test
       - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
       - run: shellcheck -S warning deploy/install.sh
