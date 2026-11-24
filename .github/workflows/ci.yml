@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           # Latest stable Go, so a Go security release is picked up without
           # editing go.mod. go.mod stays the minimum; releases build with it.
