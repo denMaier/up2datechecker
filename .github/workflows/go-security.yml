@@ -1,0 +1,68 @@
+name: Go security
+
+# Dependabot does not track Go itself. Each week this checks whether the Go
+# version in go.mod has standard-library vulnerabilities that a newer patch
+# release fixes, and if so opens a "fix(deps)" PR that merges and releases
+# on its own.
+on:
+  schedule:
+    - cron: '23 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  go-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          check-latest: true
+      - id: check
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          pinned=$(go mod edit -json | jq -r .Go)
+          # Newest patch of the pinned minor; the newest stable Go if that
+          # minor is no longer supported.
+          releases=$(curl -fsSL 'https://go.dev/dl/?mode=json' | jq -r '.[].version | ltrimstr("go")')
+          minor=$(echo "$pinned" | cut -d. -f1,2)
+          target=$(echo "$releases" | grep -E "^${minor//./\\.}\.[0-9]+$" | head -1)
+          target=${target:-$(echo "$releases" | head -1)}
+          echo "pinned $pinned, target $target"
+          if [ "$pinned" = "$target" ]; then exit 0; fi
+          if GOTOOLCHAIN=go$pinned govulncheck ./...; then
+            echo "go$pinned has no reachable vulnerabilities"; exit 0
+          fi
+          GOTOOLCHAIN=go$target govulncheck ./...
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+          echo "pinned=$pinned" >> "$GITHUB_OUTPUT"
+      - id: token
+        if: steps.check.outputs.target != ''
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_KEY }}
+      - if: steps.check.outputs.target != ''
+        run: |
+          branch="go-$TARGET"
+          if git ls-remote --exit-code origin "refs/heads/$branch" >/dev/null; then
+            echo "$branch already open"; exit 0
+          fi
+          git config user.name 'release-bot'
+          git config user.email 'release-bot@users.noreply.github.com'
+          git switch -c "$branch"
+          go mod edit -go="$TARGET"
+          git commit -am "fix(deps): require Go $TARGET"
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$branch"
+          gh pr create --head "$branch" --title "fix(deps): require Go $TARGET" \
+            --body "go$PINNED has standard-library vulnerabilities reachable from this code that go$TARGET fixes (see the govulncheck output in the [workflow run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID))."
+          gh pr merge --auto --squash "$branch"
+        env:
+          TARGET: ${{ steps.check.outputs.target }}
+          PINNED: ${{ steps.check.outputs.pinned }}
+          GH_TOKEN: ${{ steps.token.outputs.token }}

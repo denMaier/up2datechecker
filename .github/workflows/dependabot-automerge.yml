@@ -3,8 +3,7 @@ name: Dependabot auto-merge
 on: pull_request
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   automerge:
@@ -13,10 +12,17 @@ jobs:
     steps:
       - id: meta
         uses: dependabot/fetch-metadata@v3
-      # Patch and minor updates merge on their own once required checks pass;
-      # major updates wait for a human.
+      # The bot's token, not GITHUB_TOKEN: a merge made with GITHUB_TOKEN
+      # would not start the release workflow on main.
+      - id: token
+        if: steps.meta.outputs.update-type != 'version-update:semver-major'
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_KEY }}
+      # Patch and minor updates merge once required checks pass; majors wait.
       - if: steps.meta.outputs.update-type != 'version-update:semver-major'
         run: gh pr merge --auto --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.token.outputs.token }}

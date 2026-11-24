@@ -2,22 +2,87 @@ name: Release
 
 on:
   push:
-    tags: ['v*']
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
-  release:
+  # Keeps a release PR open with the next version and changelog; merging it
+  # creates the tag and a draft release.
+  release-please:
     runs-on: ubuntu-latest
+    outputs:
+      created: ${{ steps.rp.outputs.release_created }}
+      tag: ${{ steps.rp.outputs.tag_name }}
+      pr: ${{ steps.rp.outputs.pr }}
+    steps:
+      - id: token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_KEY }}
+      - id: rp
+        uses: googleapis/release-please-action@v5
+        with:
+          token: ${{ steps.token.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  # Builds the tagged version and publishes the draft once its files are there.
+  build:
+    needs: release-please
+    if: needs.release-please.outputs.created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs.tag }}
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
       - run: make test
-      - run: make release VERSION="$GITHUB_REF_NAME"
-      - name: Publish
+      - run: make release VERSION="$TAG"
         env:
+          TAG: ${{ needs.release-please.outputs.tag }}
+      - run: |
+          gh release upload "$TAG" dist/*
+          gh release edit "$TAG" --draft=false --latest
+        env:
+          TAG: ${{ needs.release-please.outputs.tag }}
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes
+
+  # A release made only of dependency fixes ships on its own; anything with
+  # your own feat/fix changes waits for you to merge the release PR.
+  automerge:
+    needs: release-please
+    if: needs.release-please.outputs.pr != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_KEY }}
+      - run: |
+          last=$(git describe --tags --abbrev=0 --match 'v*')
+          other=$(git log "$last"..HEAD --format=%s |
+            grep -vE '^(fix\(deps\)|ci|chore|docs|test|build|style|refactor)(\([^)]*\))?: ' || true)
+          if [ -n "$other" ]; then
+            printf 'Waiting for review; changes besides dependency fixes:\n%s\n' "$other"
+            exit 0
+          fi
+          gh pr merge --auto --squash "$PR"
+        env:
+          PR: ${{ fromJSON(needs.release-please.outputs.pr).number }}
+          GH_TOKEN: ${{ steps.token.outputs.token }}
