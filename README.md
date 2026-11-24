@@ -126,7 +126,7 @@ make build    # ./up2date
 make release  # static linux/amd64 and linux/arm64 binaries and SHA256SUMS in dist/
 ```
 
-Pushing a `v*` tag builds a release on GitHub.
+Releases are automatic; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Possible future work and its security constraints are described in [ROADMAP.md](ROADMAP.md).
 
